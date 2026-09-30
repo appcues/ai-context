@@ -55,7 +55,7 @@ At least one of `name` or `theme_id` must be provided. Reassigning a theme means
 
 ### `add_step`
 
-Adds a new step to an existing experience (flow or embed only). Each step starts with a default template. Returns the new step ID.
+Adds a new step to an existing experience (flow or embed only). Each step begins with a default template. Returns the new step ID.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
