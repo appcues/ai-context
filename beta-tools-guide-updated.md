@@ -2,7 +2,7 @@
 
 These tools extend the Appcues MCP server with the ability to **create and edit web experiences** (Flows 2.0, Embeds, Banners, and Pins), **theme them**, and **configure audience targeting and triggers** directly from your AI coding assistant.
 
-> **Note:** These tools create and modify **draft** experiences. Nothing goes live until you publish from Appcues Studio.
+> **Note:** These tools create and modify **draft** experiences. Nothing goes live until it is published, either from Appcues Studio or with `publish_experience` (see [Publishing and related tools](#publishing-and-related-tools)). Only call `publish_experience` when the user has explicitly asked to publish.
 
 ## Quick Start
 
@@ -12,7 +12,7 @@ A typical flow-building conversation looks like this:
 2. **Add steps** — each step is a screen in the flow.
 3. **Check for a theme** — if the experience has a theme, load its variants before writing any content.
 4. **Design each step** — set the layout, text, images, and buttons using the DSL.
-5. **Configure step behavior** — position, animations, backdrop, delay, or navigation as needed.
+5. **Configure step behavior** — position, animations, backdrop, delay, navigation, or (for tooltips) the target element and advance-on-click, all with `update_step`.
 6. **Set targeting** — decide who sees it and where.
 
 ---
@@ -27,9 +27,11 @@ Creates a new web experience and returns its ID.
 |-----------|----------|-------------|
 | `name` | Yes | Name for the experience |
 | `type` | No | `"flow"` (overlay dialog, default), `"embed"` (inline within the page), `"banner"` (top-of-page banner), or `"persistent"` (pin) |
-| `build_url` | No / **Required for `banner` and `persistent`** | The page in the customer's product where the experience will be built and previewed. Must include protocol. |
+| `build_url` | Yes | The page in the customer's product where the experience will be built and previewed (e.g. `https://app.example.com/dashboard`). Must include protocol. Get it from the user, or infer it from the most recently created web experience. |
 | `theme_id` | No | Published experience theme ID to assign. Omit to use the account's default theme if one exists. Pass `null` explicitly to create with no theme. |
 | `tactic_id` | No | If this content is part of a tactic, pass its ID to link automatically. |
+| `tag_ids` | No | IDs of tags to associate with the experience. Use `list_tags` to find IDs (see [Publishing and related tools](#publishing-and-related-tools)). |
+| `recap` | No | 1–2000 characters. A retelling of what the user asked for and decided about *this* experience, in second person and past tense, opening with "You asked for…". Shown as conversation history in the experience's own chat. |
 
 NPS and Launchpad experiences cannot be created via tools — use the builder wizard.
 
@@ -41,15 +43,29 @@ NPS and Launchpad experiences cannot be created via tools — use the builder wi
 
 ### `update_experience`
 
-Updates top-level experience properties — `name` and/or `theme_id`. Does **not** modify step content.
+Updates top-level experience properties — `name`, `theme_id`, and/or `tag_ids`. Does **not** modify step content, and does not set the display name end users see.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `experience_id` | Yes | ID of the experience |
-| `name` | No | New name |
+| `name` | No | New internal name, shown to the team in the Studio experience list |
 | `theme_id` | No | Published experience theme ID to (re)assign |
+| `tag_ids` | No | New tag IDs. **Replaces** the existing tags; pass an empty array to clear them |
 
-At least one of `name` or `theme_id` must be provided. Reassigning a theme means variants may have changed — call `get_experience_theme_variants` again before your next `update_step_content`.
+At least one of `name`, `theme_id` or `tag_ids` must be provided. Reassigning a theme means variants may have changed — call `get_experience_theme_variants` again before your next `update_step_content`.
+
+---
+
+### `clone_experience`
+
+Clones an experience into a new **unpublished draft**. Works for any experience type, and the clone is always the same kind and type as the source, in the same folder. The source must be a draft or published item; archived items cannot be cloned.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | ID of the experience to clone (use `list_experiences` to find it) |
+| `name` | No | Name for the clone. Defaults to the source's name |
+
+**Example prompt:** *"Duplicate the Welcome Tour flow so I can try a different version"*
 
 ---
 
@@ -62,7 +78,9 @@ Adds a new step to an existing experience (flow or embed only). Each step starts
 | `experience_id` | Yes | ID of the experience to add a step to |
 | `type` | Yes | `"modal"` or `"tooltip"` for flows, `"embed"` for embeds. Must match the experience type. |
 
-Tooltip steps are a step type within flow experiences, not a separate experience type: `create_experience` with `type: "flow"`, then `add_step` with `type: "tooltip"`. The agent cannot set the tooltip's target DOM selector — a human must enter the builder to attach it to a page element.
+`"flow"` is not a step type — passing it is rejected. Use `"modal"` or `"tooltip"` on a flow, `"embed"` on an embed. Modal and tooltip steps are valid only on flow experiences, and embed steps only on embed experiences.
+
+Tooltip steps are a step type within flow experiences, not a separate experience type: `create_experience` with `type: "flow"`, then `add_step` with `type: "tooltip"`. A tooltip's target element is normally attached by a human in the builder. Only set it yourself with `update_step`'s `target_selector` when the user explicitly gives you a selector — never guess one.
 
 **Example prompt:** *"Add two more steps to this flow"*
 
@@ -70,7 +88,7 @@ Tooltip steps are a step type within flow experiences, not a separate experience
 
 ### `move_step_order`
 
-Moves a step before or after another step in the experience sequence (changes ordering only — not visual placement; for that see `update_step_position`).
+Moves a step before or after another step in the experience sequence (changes ordering only — not visual placement; for that see the `position` key of [`update_step`](#update_step)).
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -106,6 +124,8 @@ Updates the visual content and actions for a step using the DSL format. This is 
 
 The DSL parser generates UUIDs, builds the block hierarchy, expands action shorthands, and applies defaults. If validation fails, fix the DSL and retry automatically rather than asking the user — error messages point at the offending schema path.
 
+When a step contains [survey questions](#survey-questions), rewriting it has extra rules: every existing question must be in the new content with its `fieldId` set to the block's `surveyFieldId` (from `get_experience_details`), and a question is only removed by listing its id in the top-level `removeSurveyFields` array.
+
 ---
 
 ### `replace_step_text`
@@ -124,16 +144,49 @@ Finds and replaces text within a specific content block of a step — a lighter-
 
 ### `update_block_style`
 
-Partial-merges CSS style properties onto an existing block without resending the full DSL. Use this instead of `update_step_content` when you're only changing visual styling on blocks that already exist.
+Partial-merges CSS style properties onto an existing block — or onto one part of a survey question — without resending the full DSL. Use this instead of `update_step_content` when you're only changing visual styling on blocks that already exist.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `experience_id` | Yes | ID of the experience |
 | `step_id` | Yes | ID of the step |
-| `block_id` | Yes | The block's `nodeId`, from the step content structure returned by `get_experience_details` |
-| *(any CSS property)* | No | Additional top-level parameters are treated as camelCase CSS properties to merge (e.g. `backgroundColor`, `fontSize`) — only the properties you pass change |
+| `block_id` | Yes | The block's `nodeId`, from the step content structure returned by `get_experience_details`. With `part`, the survey question's `nodeId` |
+| `style` | Yes | Object of camelCase CSS properties to merge, e.g. `{"borderRadius": "12px"}`. Only the keys you pass change, and a key set to `null` is removed. Pseudo-states go under `state` (see below) |
+| `part` | No | Survey questions only: which part of the question to style (see [Styling survey questions](#styling-survey-questions)) |
 
-**Example:** call with `{"experience_id": "...", "step_id": "...", "block_id": "...", "backgroundColor": "#F0F4FF", "borderRadius": "8px"}`.
+> **Changed from earlier versions:** CSS properties are no longer accepted as top-level parameters. Put them inside `style`. Unknown top-level arguments are rejected.
+
+**Example:** `{"experience_id": "...", "step_id": "...", "block_id": "...", "style": {"backgroundColor": "#F0F4FF", "borderRadius": "8px"}}`.
+
+**Pseudo-states.** Here, unlike `style` in the step DSL, states are **not** `":hover"` keys. Nest them under `state` using the selector suffix without the colon: `{"style": {"state": {"hover": {"backgroundColor": "#EEF2FF"}}}}`. The one exception is the placeholder, which keeps its colon: `{"state": {":placeholder": {"color": "#9CA3AF"}}}`.
+
+**Padding.** A `padding` shorthand of 1–4 values is expanded to `paddingTop`, `paddingInlineEnd`, `paddingBottom` and `paddingInlineStart`. Setting `padding` to `null` clears all four.
+
+#### Styling survey questions
+
+Pass the question's `nodeId` as `block_id` and name the part in `part`:
+
+```json
+{ "block_id": "<question nodeId>", "part": "field", "style": { "borderColor": "#7C3AED", "borderRadius": "16px" } }
+```
+
+| `part` | Questions | Allowed `state` selectors |
+|---|---|---|
+| `container` | all | none |
+| `title` | all | `hover`, `focus` |
+| `error` | all | `hover`, `focus` |
+| `field` | text | `hover`, `focus`, `active`, `:placeholder` |
+| `description`, `counter` | text | `hover`, `focus` |
+| `option` | single select, multi select, rating | `hover`, `active`, `focus`, `focus-within`, `active label` |
+| `option_control` | single select, multi select, rating | `hover`, `active`, `focus`, `checked`, `checked + label` |
+| `option_title` | single select, multi select, rating | `hover`, `active`, `focus` |
+
+- `option`, `option_control` and `option_title` style **every** option of the question in one call. One call styles one question, so to restyle "the inputs" on a step, call once per question.
+- On a rating, `option` is each numbered box, `option_title` is the number, and `option_control` is an invisible input covering the box.
+- `checked + label` on `option_control` styles the option's title while it is selected. `active label` on `option` styles it while pressed.
+- A part refuses keys that would break the question's layout. The error names the key, so drop it and tell the user why. Refused: layout keys on `container` and `option` (`display`, `flexDirection`, `gap`, `justifyContent`, …), `border` on `container` and `field` (use `borderColor`, `borderWidth`, `borderStyle`), `display`, `position`, size keys on text parts, `visibility` on `error`, and all `state` on `container`. On a rating's `option_control`, position, size, opacity and margin keys are also refused.
+- Setting a key to `null` removes it (a themed part shows its theme value again), except a container's `margin` and `flexGrow` and a rating `option`'s `width` and `height`, which cannot be removed.
+- In a themed experience, keys you set override the theme for that part. Only change parts when the user asks.
 
 ---
 
@@ -149,7 +202,7 @@ Returns a complete DSL example for a specific block type, including all availabl
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `block_type` | Yes | One of: `button`, `image`, `iframe`, `rich_text`, `cell`, `layout_builder` |
+| `block_type` | Yes | One of: `button`, `image`, `iframe`, `icon`, `survey`, `rich_text`, `cell`, `layout_builder` |
 
 **Example prompt:** *"Show me how to create a two-column layout"* (uses `layout_builder`)
 
@@ -210,7 +263,43 @@ Every step is described with two top-level keys:
 | `boxShadow` | string | `"0px 6px 16px 0px rgba(0, 0, 0, 0.2)"` | Box shadow |
 | `border` | string | `"none"` | Border shorthand (e.g. `"1px solid #ccc"`) |
 | `padding` | string | `"0px"` | Inner padding |
+| `minWidth` / `maxWidth` | string | – | Embed containers only. Embeds are always `100%` wide, so use these to constrain them. |
 | `variant` | string | – | Theme variant for the container. Set when the experience has a theme. |
+| `closeX` | boolean \| object | see below | The close X in the container's corner. `false` hides it, `true` shows the default, an object shows it styled. See [Close X](#close-x). |
+
+### Close X
+
+The close X dismisses the experience **without** marking it complete. Set it on the container:
+
+```json
+{
+  "container": {
+    "closeX": {
+      "size": 16,
+      "color": "#1F2937",
+      "hoverColor": "#5155CA",
+      "backgroundColor": "#F3F4F6",
+      "borderRadius": "50%",
+      "margin": "8px",
+      "position": "top-left"
+    }
+  },
+  "layout": { "cells": [{ "type": "text", "content": [{ "text": "Hi" }] }] }
+}
+```
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `size` | integer | `14` | Edge length of the X in pixels, 8–48 |
+| `color` | string | `"#000000"` | Color of the X |
+| `hoverColor` | string | – | Color of the X while hovered |
+| `backgroundColor` | string | `"transparent"` | Background behind the X. The button has 8px padding, so this shows as a badge |
+| `borderRadius` | string | `"6px"` | Corner radius of the background (e.g. `"50%"` for a circle) |
+| `margin` | string | `"12px"` | Distance from the container's edges (CSS shorthand, 1–4 values) |
+| `position` | string | `"top-right"` | `"top-right"` or `"top-left"` |
+| `variant` | string | – | Theme variant name. Set when the experience has a theme |
+
+An object **replaces** the current close X, so include every style the user wants to keep. When `closeX` is omitted, the step keeps the close X it already has (or its lack of one). A step with no content yet gets the default for its type: shown on tooltips, hidden on modals and embeds. To simply show or hide the X, use `update_step` with `close_button`; use `container.closeX` to change how it looks or where it sits. Don't add a custom button for an ordinary close request.
 
 ### Layout Structure
 
@@ -248,6 +337,26 @@ Every step is described with two top-level keys:
 | `html` | Pasted `<iframe>` snippet. One of `url`/`html` required. |
 | `style` | Custom CSS; `width` is always 100%, `height` defaults to auto |
 
+**Icon**
+
+A small decorative icon: a single emoji, or a custom SVG. Use it beside a heading or as a badge. Icons are hidden from screen readers, so use an image block when the picture carries meaning.
+
+```json
+{ "type": "icon", "emoji": "🚀", "name": "rocket", "size": 32, "backgroundColor": "#EEF2FF", "borderRadius": "50%", "padding": "8px" }
+```
+
+| Property | Default | Notes |
+|---|---|---|
+| `emoji` | – | A single emoji. Exactly one of `emoji` or `url` is required |
+| `url` | – | Custom SVG URL on `images.appcues.com` or `res.cloudinary.com` (e.g. from `upload_image`). Exactly one of `emoji` or `url` is required |
+| `name` | the emoji, or `"Custom icon"` | Icon name; for emoji use its short id (e.g. `"rocket"`, `"star"`) |
+| `size` | `24` | Square edge length in pixels, 8–128 |
+| `backgroundColor` | – | Background behind the icon |
+| `borderRadius` | – | Corner radius of the background (e.g. `"50%"`) |
+| `padding` | – | Space between icon and background edge; grows the box, never the icon |
+
+Icons take **no `margin`**, `actions`, or `variant` — use `padding` or the layout's `gap` for spacing. If validation reports that no schema matched an icon cell, check that exactly one of `emoji`/`url` is set and that no `margin` was given. To place an icon beside text, put both in a nested `"row"` layout.
+
 **Text**
 
 A text block holds one or more `TextNode`s (headings, paragraphs). Prefer a single text block with multiple nodes over separate text blocks when a heading and body are grouped together.
@@ -283,6 +392,7 @@ TextNode: `text` (required), `tag` (`"p"` | `"h1"`–`"h5"`, default `"p"`), `al
 | `fontWeight` | `"normal"` |
 | `padding` | `"12px 16px"` |
 | `border` | – |
+| `submit` | `false` — makes this the button that submits the step's survey answers. See [Survey Questions](#survey-questions) |
 | `variant` | – |
 
 **Nested Layout**
@@ -302,6 +412,87 @@ For complex layouts (e.g. side-by-side content), nest a layout inside `cells`:
 
 Nested layouts accept `style` for advanced CSS.
 
+### Survey Questions
+
+Four blocks collect answers from visitors: `survey_text`, `survey_single_select`, `survey_multi_select` and `survey_rating`. They can go on **modal and embed steps only**, not tooltips. (NPS surveys are still created in the builder wizard — don't build one from a rating.)
+
+A step's questions are answered together. When the visitor clicks the step's **submit button** (a `button` with `"submit": true`), every question on the step is checked. If any answer is invalid, that question's `errorMessage` is shown and nothing else happens. Otherwise all answers are recorded and then the button's other `actions` run (usually `"next"`). Answers from every step of an experience are reported together as one survey on its analytics page.
+
+- A step with survey questions **must** have at least one submit button; a step without survey questions must not have one.
+- Other buttons (Back, Skip) and the close X never submit answers.
+- On the last step use `"close"` instead of `"next"`, or `{ "type": "close", "markComplete": true }` if finishing the survey should complete the flow.
+
+```json
+{ "type": "button", "label": "Submit", "submit": true, "actions": ["next"] }
+```
+
+**Common question properties**
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `reportingName` | string | required | The question's name in survey reports and exports. 1–100 characters, descriptive, unique within the experience (never reuse a name, even across steps) |
+| `title` | string | required | The question as the visitor reads it (1–500 characters) |
+| `errorMessage` | string | `"Invalid field"` | Shown under the question when validation fails. Write a specific one whenever the question has validation |
+| `fieldId` | string | – | Only for questions that already exist — see [Editing survey questions](#editing-survey-questions) |
+| `variant` | string | – | Theme variant name. Set when the experience has a theme |
+
+Survey questions take no `actions`, `style` or `margin`. Space them with the layout's `gap` and `parentCell`, and restyle them with [`update_block_style`](#update_block_style) after building.
+
+**`survey_text`** — free text
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `description` | string | – | Helper text under the field |
+| `placeholder` | string | `"Type your answer"` | Placeholder inside the field |
+| `format` | `"short"` \| `"long"` | `"short"` | One-line input or multi-line text area |
+| `inputType` | `"text"` \| `"email"` | `"text"` | `"email"` validates the address. Short format only |
+| `required` | boolean | `false` | An answer is required |
+| `minLength` | integer | – | Fewest characters. Needs `required: true` |
+| `maxLength` | integer | – | Most characters |
+
+**`survey_single_select`** (radio buttons) and **`survey_multi_select`** (checkboxes)
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `options` | array of strings | required | 1–20 unique choices, shown in order. The text is also the recorded answer |
+| `required` | boolean | `false` | Single select only: one option must be chosen |
+| `minOptions` | integer | – | Multi select only: fewest choices. `1` makes the question required |
+| `maxOptions` | integer | – | Multi select only: most choices. Needs `minOptions` |
+
+**`survey_rating`** — numbered boxes
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `min` | integer | `0` | Lowest score, 0–10 |
+| `max` | integer | `10` | Highest score, 0–20. Must be greater than `min` and at most `min + 10` |
+| `required` | boolean | `false` | A score must be chosen |
+
+A rating has no end labels, so put the meaning of the ends in `title` (e.g. "How easy was setup? (1 = hard, 5 = easy)").
+
+```json
+{
+  "type": "survey_multi_select",
+  "reportingName": "Goals",
+  "title": "What do you want to do first?",
+  "options": ["Invite my team", "Connect my data", "Build a report"],
+  "minOptions": 1,
+  "maxOptions": 2,
+  "errorMessage": "Choose one or two options"
+}
+```
+
+#### Editing survey questions
+
+Existing questions appear in `get_experience_details` as blocks whose `blockType` is `SurveyText`, `SurveySingleSelect`, `SurveyMultiSelect` or `SurveyRating`, each with a `surveyFieldId` (the question's id) and `surveyFieldName` (its reporting name).
+
+- **Rewriting a step that has questions (`update_step_content`):** every existing question must be in the new content with `fieldId` set to its `surveyFieldId`. This keeps its answers connected in reports. You can change a question's title, options and validation; changing `reportingName` renames it in reports. You can't change its type — remove it and add a new one.
+- **Removing a question:** leave it out of the new content **and** list its id in `removeSurveyFields`. Only do this when the user asked to remove it. A rewrite that silently drops a question is rejected and the error names it. If you remove a step's last question, also remove `submit` from its button.
+- **Wording-only changes:** prefer `replace_step_text`. Renaming an option changes the answer recorded from then on, so tell the user earlier answers keep the old wording in reports.
+- **Tooltips with questions** can't be rewritten with `update_step_content`; use `replace_step_text` for wording or edit in the builder.
+- **Moving a question to another step** isn't possible with its `fieldId`: remove it from the source step, then add it to the target as a new question. Its earlier answers stay under the old question in reports.
+
+Agent-built text questions get the survey character counter automatically.
+
 ### Actions
 
 Actions go on `button` and `image` blocks. Combine multiple actions in one array.
@@ -314,6 +505,7 @@ Actions go on `button` and `image` blocks. Combine multiple actions in one array
 
 | Object action | Format |
 |---|---|
+| Close and complete | `{"type": "close", "markComplete": true}` — closes the experience and marks it complete. Only when the user asked for it. Can't be combined with `next`, `prev` or `goTo` on the same block |
 | Redirect | `{"type": "redirect", "url": "https://...", "newTab": true}` |
 | Go to step | `{"type": "goTo", "stepId": "step-uuid"}` |
 | Track event | `{"type": "track", "event": "Event Name", "properties": {...}}` |
@@ -359,7 +551,7 @@ Every block or nested layout in `cells` is wrapped by a Cell. Use `parentCell` t
 
 ### Block Margin
 
-`text`, `button`, `image`, and `iframe` blocks accept `margin` for per-block spacing (CSS shorthand). Prefer layout `gap` for uniform spacing between cells; use `margin` for one-off exceptions.
+`text`, `button`, `image`, and `iframe` blocks accept `margin` for per-block spacing (CSS shorthand). Icon and survey blocks do **not** accept `margin` — use `gap` and `parentCell` (and an icon's `padding`). Prefer layout `gap` for uniform spacing between cells; use `margin` for one-off exceptions.
 
 ```json
 { "type": "text", "content": [{ "text": "Spaced text" }], "margin": "16px 24px" }
@@ -393,7 +585,7 @@ Blocks (except text, which uses TextNode properties instead), containers, and ce
 
 ### Tooltips
 
-Tooltips are a step type within flow experiences, not a separate experience type: `create_experience` with `type: "flow"`, then `add_step` with `type: "tooltip"`. A human must attach the tooltip's target DOM selector in the builder.
+Tooltips are a step type within flow experiences, not a separate experience type: `create_experience` with `type: "flow"`, then `add_step` with `type: "tooltip"`. A human normally attaches the tooltip's target DOM selector in the builder; you can set it with `update_step`'s `target_selector` only when the user explicitly provides a selector.
 
 Tooltip container defaults differ from flow modals:
 
@@ -423,91 +615,109 @@ Prefer shorter heights (100–250px) since embeds share space with page content.
 
 ### Constraints
 
-- **First step:** `update_step_navigation` (`redirect`/`waitForUrl`) must not be used on a flow's first step — it displays immediately with no "before shown" phase. A `prev` action must not be used on the first step — there's no previous step to go to.
+- **First step:** `update_step` `navigation` (`redirect`/`waitForUrl`) must not be used on a flow's first step — it displays immediately with no "before shown" phase. A `prev` action must not be used on the first step — there's no previous step to go to.
 - **Spacing:** Prefer `gap` for uniform spacing between cells, `margin` for per-block spacing, `padding` for layout/container inner padding.
 - **Never leave `expectedSize` partially set.** Setting it on some top-level cells (e.g. an image) but not others in the same layout causes the undecorated cells to default to a flex weight of 1, get squeezed to near-zero allocated height, and render their content overlapping their neighbors instead of shrinking to fit. Set `expectedSize` on every cell in the layout and size the container `height` to their sum — see [Cell Options](#cell-options-parentcell). Always render a screenshot with `get_experience_screenshot` after building step content and check for overlap before calling it done.
 
 ### Image Sourcing
 
-Do not set `src` on image blocks to arbitrary external URLs. Only use URLs returned by `generate_image` or `upload_image` (see [Image Tools](#image-tools)). If no image is needed yet, omit `src` to use a default placeholder — external URLs are silently replaced with a placeholder.
+Do not set `src` on image blocks to arbitrary external URLs. Only use URLs returned by `upload_image` (or `generate_image`, in-app only) — see [Image Tools](#image-tools). If no image is needed yet, omit `src` to use a default placeholder — external URLs are silently replaced with a placeholder.
 
 ---
 
 ## Step Configuration Tools
 
-These control step-level behavior rather than visual content. All require `experience_id` and `step_id`; flow/embed only unless noted.
+Step-level behavior (as opposed to visual content) is set with a single tool, `update_step`. Flow and embed experiences only, unless noted.
 
-### `update_step_close_button`
+### `update_step`
 
-Toggle the native close button on a step.
-
-| Parameter | Required | Description |
-|---|---|---|
-| `show` | Yes | `true` to show, `false` to hide the native close button |
-
-Use this for ordinary close/X requests instead of adding a custom close button via `update_step_content` — reserve that for when the user explicitly wants a custom dismiss control inside the layout.
-
-### `update_step_position`
-
-Sets the position of a flow modal on the page.
+Updates one or more step settings in a single call. **Pass only the keys you want to change** — anything omitted is left alone. The tool replaces the older per-setting tools (`update_step_close_button`, `update_step_position`, `update_step_animations`, `update_step_backdrop`, `update_step_navigation`, `update_step_delay`, `update_step_advance_on_error`); those names no longer exist.
 
 | Parameter | Required | Description |
 |---|---|---|
-| `position` | Yes | One of: `top-left`, `top-center`, `top-right`, `center-left`, `center`, `center-right`, `bottom-left`, `bottom-center`, `bottom-right` |
+| `experience_id` | Yes | ID of the experience |
+| `step_id` | Yes | ID of the step |
+| `close_button` | No | Boolean. `true` shows, `false` hides the native close button |
+| `position` | No | Flow modal position: `top-left`, `top-center`, `top-right`, `center-left`, `center`, `center-right`, `bottom-left`, `bottom-center`, `bottom-right`. Modal steps only |
+| `animations` | No | Object with optional `entrance` and `exit` (see below) |
+| `backdrop` | No | Object: `enabled`, `color`, `blur`, `backdrop_style` (see below) |
+| `navigation` | No | Object: `mode` (required), `url`, `url_pattern`. Page navigation that runs *before* the step is shown. Flow experiences only |
+| `delay` | No | Integer milliseconds to wait before showing the step. `0` removes the delay. Common values: 500, 1000, 2000, 5000 |
+| `advance_on_error` | No | Object: `action` (required), `target_step_id`, `wait_time`. Tooltip steps only |
+| `advance_on_click` | No | Boolean. Tooltip steps only |
+| `target_selector` | No | Object: `selector` (required), `order`, `text`. Tooltip steps only |
 
-Use this for ordinary modal placement requests instead of theme/custom CSS. Use `update_step_content` container `width`/`height` to resize a modal.
+At least one key besides the IDs must be provided. The tool is idempotent, and unknown top-level parameters are rejected.
 
-### `update_step_animations`
+**Order and failures.** When several keys are sent, they are applied in a fixed order: `close_button`, `position`, `animations`, `backdrop`, `navigation`, `delay`, `advance_on_error`, `target_selector`, `advance_on_click`. The first error stops the rest, but keys applied before it have already been written, so re-read the step if a multi-key call fails.
 
-Sets entrance and/or exit animation on a flow step. Omit a parameter to leave it unchanged; set an effect to `"none"` to remove it.
+**Do not call `update_step` in parallel with `update_step_content`, `replace_step_text` or `update_block_style` on the same step.** They write the same step, and a parallel call can drop the other's changes (`close_button` and `position` rewrite the step's `content`; on embeds `update_step_content` also rewrites its `traits`). Call content tools first, then `update_step`.
 
-| Parameter | Required | Description |
+#### `animations`
+
+Omit a key to leave it unchanged; set an effect to `"none"` to remove it. At least one of `entrance` or `exit` is required when `animations` is sent.
+
+| Key | Values |
+|---|---|
+| `entrance` | `none`, `fade_in`, `scale_in`, `spring_scale`, `slide_in_top`, `slide_in_bottom`, `slide_in_left`, `slide_in_right`, `drawer_in_top`, `drawer_in_bottom`, `drawer_in_left`, `drawer_in_right`. Default `fade_in` |
+| `exit` | `none`, `fade_out`, `scale_out`, `slide_out_top`, `slide_out_bottom`, `slide_out_left`, `slide_out_right`, `drawer_out_top`, `drawer_out_bottom`, `drawer_out_left`, `drawer_out_right`. Default `none` |
+
+#### `backdrop`
+
+The overlay behind a step. Auto-detects flow vs. tooltip step type.
+
+| Key | Applies to | Description |
 |---|---|---|
-| `entrance` | No | `none`, `fade_in`, `scale_in`, `spring_scale`, `slide_in_top`, `slide_in_bottom`, `slide_in_left`, `slide_in_right`, `drawer_in_top`, `drawer_in_bottom`, `drawer_in_left`, `drawer_in_right`. Default `fade_in`. |
-| `exit` | No | `none`, `fade_out`, `scale_out`, `slide_out_top`, `slide_out_bottom`, `slide_out_left`, `slide_out_right`, `drawer_out_top`, `drawer_out_bottom`, `drawer_out_left`, `drawer_out_right`. Default `none`. |
+| `enabled` | Flow only | Show the backdrop overlay. Defaults to `true` once `backdrop` is sent |
+| `color` | Flow only | CSS hex with optional alpha, e.g. `"#000000"`, `"#00000080"`. Default `"#00000080"` |
+| `blur` | Flow only | One of `none`, `2px`, `4px`, `8px`, `12px`, `16px`. Default `"none"` |
+| `backdrop_style` | Tooltip only | One of `none`, `soft`, `hard`. Default `"soft"` |
 
-### `update_step_backdrop`
+Backdrop settings are rejected on non-flow experiences.
 
-Updates the overlay behind a step. Auto-detects flow vs. tooltip step type.
+#### `navigation`
 
-| Parameter | Applies to | Description |
-|---|---|---|
-| `enabled` | Flow only | Show the backdrop overlay. Default `true` once this tool is called. |
-| `color` | Flow only | CSS hex with optional alpha, e.g. `"#000000"`, `"#00000080"`. Default `"#00000080"`. |
-| `blur` | Flow only | One of `none`, `2px`, `4px`, `8px`, `12px`, `16px`. Default `"none"`. |
-| `backdrop_style` | Tooltip only | One of `none`, `soft`, `hard`. Default `"soft"`. |
-
-### `update_step_navigation`
-
-Configures page navigation that runs *before* a step is shown. Flow experiences only. Not valid on the first step (see [Constraints](#constraints)).
-
-| Parameter | Required | Description |
+| Key | Required | Description |
 |---|---|---|
 | `mode` | Yes | `redirect`, `waitForUrl`, or `none` to remove |
-| `url` | Required for `redirect` | URL to navigate to before the step renders |
-| `url_pattern` | Required for `waitForUrl` | URL pattern to match before showing the step |
+| `url` | For `redirect` | `http(s)` URL to navigate to before the step renders |
+| `url_pattern` | For `waitForUrl` | URL pattern to match before showing the step |
 
-### `update_step_delay`
+Not valid on the first step (see [Constraints](#constraints)).
 
-Adds a time delay before a step is shown.
+#### `advance_on_error`
 
-| Parameter | Required | Description |
-|---|---|---|
-| `duration` | Yes | Milliseconds. `0` removes the delay. Common values: 500, 1000, 2000, 5000. |
+"Advance if the selector can't be found" — **tooltip steps in flows only**.
 
-### `update_step_advance_on_error`
-
-Configures "advance if selector can't be found" on a **tooltip step only**.
-
-| Parameter | Required | Description |
+| Key | Required | Description |
 |---|---|---|
 | `action` | Yes | `next` to skip forward, `goTo` to jump to `target_step_id`, `off` to remove |
-| `target_step_id` | Required for `goTo` | Another step in this experience |
-| `wait_time` | No | Milliseconds to wait before advancing. Default 500, max 30000. |
+| `target_step_id` | For `goTo` | A *different* step in this experience |
+| `wait_time` | No | Milliseconds to wait before advancing. Default 500, max 30000 |
+
+#### `advance_on_click`
+
+The builder's "Advance on click of element" setting — **tooltip steps in flows only**. `true` advances to the next step when the user clicks the tooltip's target element; `false` turns it off. Other actions already on the step are kept.
+
+#### `target_selector`
+
+The page element a tooltip anchors to — **tooltip steps in flows only**. **Only set this when the user explicitly provides a selector — never guess one.** It replaces any existing selector and refinements, so omit `order`/`text` to clear them. If `advance_on_click` is already on, it follows the new selector.
+
+| Key | Required | Description |
+|---|---|---|
+| `selector` | Yes | Non-empty CSS selector, e.g. `"#save-button"` or `".nav a"` |
+| `order` | No | Integer ≥ 1. When the selector matches several elements, anchor to the Nth match (1 = first) |
+| `text` | No | Only match elements whose full text equals this (case-insensitive) |
+
+#### Common requests
+
+- **Show or hide the close X:** `close_button`. To change how the X looks or where it sits, use `container.closeX` in `update_step_content` — see [Close X](#close-x).
+- **Place a modal:** `position`. Don't use theme or custom CSS for ordinary placement. Resize with the container `width`/`height` in `update_step_content`.
+- **Tooltip skips if its element is missing:** `advance_on_error`.
 
 ### Reordering vs. positioning
 
-`move_step_order` changes the step **sequence** (which comes first/second/third). `update_step_position` changes the **visual placement** of a modal on the page (e.g. bottom-right corner).
+`move_step_order` changes the step **sequence** (which comes first/second/third). `update_step` `position` changes the **visual placement** of a modal on the page (e.g. bottom-right corner).
 
 ---
 
@@ -551,7 +761,7 @@ Gets component variant names and key visual style hints (a compact inventory, no
 4. Set `"variant": "variant_name"` on each themable block in your DSL, choosing the closest match to the user's intent.
 5. Call it again after `update_experience` reassigns a theme, or before any `update_step_content` on a themed experience where you haven't already retrieved variants in this conversation.
 
-If no variant is specified, `"default"` is used; an unknown variant falls back to `"default"`.
+If no variant is specified, `"default"` is used; an unknown variant falls back to `"default"`. Survey questions and the close X also accept a `variant`.
 
 **Themable components:** `button`, `p`, `h1`–`h5`, `img`, `cell`, `modal`, `embed`, `tooltip`.
 
@@ -588,11 +798,30 @@ Sets a theme as the account default.
 |---|---|---|
 | `theme_id` | Yes | Theme to set as default |
 
+### `list_legacy_themes`
+
+Lists legacy 1.0 CSS themes that can be migrated into experience themes. Returns each theme's `id`, `name` and `isDefault` only.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `search_term` | No | Filter legacy themes by name |
+
+### `migrate_legacy_theme`
+
+Creates a **published** experience theme by migrating a legacy 1.0 theme.
+
+| Parameter | Required | Description |
+|---|---|---|
+| `legacy_theme_id` | Yes | Legacy 1.0 theme ID (from `list_legacy_themes`) |
+| `is_default` | No | If `true`, sets the new theme as the account default |
+
 ---
 
 ## Image Tools
 
 ### `generate_image`
+
+> **Not available through the MCP server.** This tool exists only in Appcues' in-app assistant. Over MCP, host images with `upload_image` instead.
 
 Generates an AI image for use in experience content and returns its hosted URL.
 
@@ -603,15 +832,16 @@ Generates an AI image for use in experience content and returns its hosted URL.
 
 ### `upload_image`
 
-Uploads a user-attached chat image to get a hosted URL for use in experiences.
+Hosts an image or SVG on Cloudinary and returns a URL for use in experiences, including custom [icons](#block-types). Pass **exactly one** source:
 
 | Parameter | Required | Description |
 |---|---|---|
-| `assistant_file_id` | Yes | The id from a `{{assistant_file:<id>}}` tag preceding the image in the conversation |
+| `assistant_file_id` | One of the two | The id from a `{{assistant_file:<id>}}` tag preceding a user-attached image in the in-app chat |
+| `image_url` | One of the two | A public `https` URL of the image to host. Use this anywhere there is no in-app chat attachment (e.g. over MCP) |
 
-For newly generated images use `generate_image` instead.
+Hostable formats are JPG, PNG, GIF and SVG, up to 5 MB. If the upload fails, the tool returns the reason — relay it to the user.
 
-> Only images hosted on the Appcues CDN or Cloudinary — i.e. URLs returned by these two tools — are supported in the DSL. Arbitrary external URLs are silently replaced with a placeholder.
+> Only images hosted on the Appcues CDN or Cloudinary — i.e. URLs returned by `upload_image` (or `generate_image` in-app) — are supported in the DSL. Arbitrary external URLs are silently replaced with a placeholder.
 
 ---
 
@@ -693,14 +923,39 @@ Returns the JSON schema for a specific trigger condition type.
 
 ---
 
+## Publishing and related tools
+
+### `publish_experience` / `unpublish_experience`
+
+Make an experience live, or take it down. Both take a single `id` and work for every experience type. They require the account **publisher** role.
+
+- `publish_experience` immediately affects production content that end users see. The experience must be in draft state with unpublished changes. **Only call it when the user has explicitly asked to publish**, and confirm first if there is any doubt.
+- `unpublish_experience` immediately hides a live experience. It stays as a draft and can be republished.
+
+### Other tools used alongside the builder
+
+| Tool(s) | Use |
+|---|---|
+| `get_experience_details` | Full JSON of an experience, including step content, `nodeId`s and survey field ids. Optional `state`: `draft` (default), `published`, `archived` |
+| `get_publish_history` | Takes `id`. Full publish history: first publish, every publish or push of changes, unpublishes, and the windows it was live |
+| `get_experience_screenshot` | Takes `id` and optional `step_id` (omit for the first screenshotable step). Returns a PNG for flows, banners and pins. Use it to check a built step |
+| `list_tags`, `get_tag`, `create_tag`, `update_tag`, `delete_tag` | Manage tags. Use `list_tags` to find IDs to pass as `tag_ids` on `create_experience` / `update_experience` |
+| `list_click_to_track_events`, `get_click_to_track_event`, `create_click_to_track_event`, `update_click_to_track_event` | Manage click-to-track events |
+| `list_key_moments`, `get_key_moment`, `create_key_moment`, `update_key_moment`, `set_key_moment_status`, `get_key_moment_references`, `get_key_moment_schema` | Manage key moments |
+
+---
+
 ## Tips
 
-- **Everything is a draft.** These tools only modify the draft version of an experience. Publish from Appcues Studio when ready.
+- **Everything is a draft until published.** The build tools only modify the draft version of an experience. Publish from Appcues Studio, or with `publish_experience` when the user explicitly asks.
 - **`content` is a JSON object, not a string.** Pass `update_step_content`'s `content` as a native JSON object with `container`/`layout` keys, not a JSON-encoded string.
 - **CSS property names changed.** The DSL now uses real CSS property names (`backgroundColor`, `borderRadius`, `padding`, `fontSize`, `fontWeight`, `objectFit`) instead of older Appcues-specific aliases — see the rename table in [DSL Format](#dsl-format).
 - **Themes are opt-in but automatic.** `create_experience` auto-assigns the account's default theme if one exists and none is specified. If an experience has a theme, call `get_experience_theme_variants` before writing DSL and set `variant` on themable blocks — don't guess variant names.
-- **Images:** Only images hosted on the Appcues CDN or Cloudinary are supported. Get URLs from `generate_image` or `upload_image` — omit `src` for a default placeholder otherwise.
-- **Use the right tool for the job:** `update_step_close_button` for close/X toggles, `update_step_position` for modal placement, `update_block_style` for styling-only tweaks to existing blocks, `replace_step_text` for copy-only tweaks — reserve `update_step_content` for structural changes.
+- **Images:** Only images hosted on the Appcues CDN or Cloudinary are supported. Get URLs from `upload_image` (a chat attachment or a public `image_url`) — omit `src` for a default placeholder otherwise.
+- **Use the right tool for the job:** `update_step` for close/X toggles, modal placement, animations, backdrop, navigation, delay and tooltip behavior; `container.closeX` (via `update_step_content`) to style the close X; `update_block_style` (with a `style` object) for styling-only tweaks to existing blocks and survey question parts; `replace_step_text` for copy-only tweaks — reserve `update_step_content` for structural changes.
+- **Don't run write tools in parallel on one step.** `update_step`, `update_step_content`, `replace_step_text` and `update_block_style` all write the same step. Run them one after another.
+- **Surveys need a submit button.** A step with survey questions must have a `button` with `"submit": true`, and every existing question must be passed back with its `fieldId` when you rewrite the step — see [Survey Questions](#survey-questions).
+- **Never guess a tooltip's target.** Only set `target_selector` when the user gives you the selector.
 - **`get_experience_details` first.** Fetch it to find a block's `block_id`/`nodeId` before calling `replace_step_text` or `update_block_style`.
 - **Read before you write targeting.** Call `get_experience_rule` before `update_experience_rule` so you know what to preserve.
 - **Use the schema tools when stuck.** If a step update fails validation, call `get_dsl_schema` or `get_example_block_content` to see the correct format.
