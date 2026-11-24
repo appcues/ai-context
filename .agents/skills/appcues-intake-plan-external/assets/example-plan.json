@@ -1,0 +1,533 @@
+{
+  "meta": {
+    "customer": "Brightwave Health",
+    "subtitle": "Getting your data foundation right the first time",
+    "date": "2026-10-23",
+    "version": "1.0",
+    "stage": "Completed by Brightwave",
+    "target_go_live": "2026-12-01",
+    "platforms": [
+      "Web",
+      "Mobile",
+      "Agent"
+    ],
+    "customer_team": [
+      {
+        "name": "Dana Ortiz",
+        "role": "Director, Lifecycle Marketing",
+        "email": "dana@brightwave.example"
+      },
+      {
+        "name": "Sam Lee",
+        "role": "Staff Frontend Engineer",
+        "email": ""
+      },
+      {
+        "name": "",
+        "role": "Salesforce admin",
+        "email": ""
+      }
+    ],
+    "appcues_team": [],
+    "audience": "customer",
+    "source": "customer self-serve"
+  },
+  "summary": {
+    "overview": "Brightwave wants to lift activation of its care-team scheduling feature and cut support tickets from new clinic admins. Web (React SPA) and a React Native app are in scope; a vendor chat assistant (Intercom Fin) sits in the web app. Salesforce is the system of record for accounts and lifecycle stage.",
+    "headline_callout": {
+      "title": "Settle first: which ID identifies a clinic?",
+      "body": "Salesforce uses an 18-character Account ID; the product uses a numeric clinic_id. Pick one for account data and store it as a Text field in the other system."
+    },
+    "readiness": [
+      {
+        "area": "1. SDK initialized in every environment",
+        "status": "yellow",
+        "note": "Web and React Native in scope; CSP ticket needed for web."
+      },
+      {
+        "area": "2. Users and accounts identified",
+        "status": "yellow",
+        "note": "User ID decided (internal UUID); account ID still open."
+      },
+      {
+        "area": "3. Objectives mapped and defined",
+        "status": "green",
+        "note": "Two goals with owners and a baseline."
+      },
+      {
+        "area": "4. Integration workstream established",
+        "status": "red",
+        "note": "No Salesforce admin named yet; Snowflake owner unknown."
+      },
+      {
+        "area": "5. Data in use, not just collected",
+        "status": "yellow",
+        "note": "Every planned property has a use; 2 events still need a Dashboard owner."
+      },
+      {
+        "area": "6. Key Moments measure what matters",
+        "status": "yellow",
+        "note": "'Scheduled First Shift' event does not exist yet - must ship with install."
+      }
+    ],
+    "key_decisions": [
+      {
+        "decision": "User ID",
+        "answer": "Internal user UUID",
+        "why": "Can't be changed later without splitting every user's history. Must also live on the Salesforce Contact.",
+        "owner": "Sam Lee"
+      },
+      {
+        "decision": "Account (group) ID",
+        "answer": "",
+        "why": "Salesforce matches accounts on this value; it must be a Text field there.",
+        "owner": ""
+      },
+      {
+        "decision": "Install method",
+        "answer": "NPM package",
+        "why": "Switching to Segment or GTM later means redoing identify and track.",
+        "owner": "Sam Lee"
+      },
+      {
+        "decision": "Identity verification",
+        "answer": "",
+        "why": "Teams that skip this decision often meet it later as a security finding.",
+        "owner": ""
+      }
+    ]
+  },
+  "account": [
+    {
+      "item": "Data hosting region",
+      "answer": "US",
+      "notes": "Where Appcues stores data, set at account creation."
+    },
+    {
+      "item": "Environments in scope",
+      "answer": "Web, Mobile, Agent (discovery)"
+    },
+    {
+      "item": "Web framework",
+      "answer": "React 18 single-page app",
+      "notes": "Needs enableURLDetection and stable data-appcues attributes."
+    },
+    {
+      "item": "Mobile framework",
+      "answer": "React Native 0.74 (iOS + Android)",
+      "notes": "Requires RN 0.73+."
+    },
+    {
+      "item": "Install method",
+      "answer": "NPM",
+      "notes": ""
+    },
+    {
+      "item": "Content Security Policy enforced?",
+      "answer": "Yes",
+      "notes": "Separate security ticket - start now.",
+      "owner": "developer"
+    },
+    {
+      "item": "Staging environment",
+      "answer": "",
+      "owner": "developer"
+    }
+  ],
+  "objectives": [
+    {
+      "objective": "Activate new clinics within 14 days",
+      "why": "Clinics that schedule in week 2 renew at 2x the rate",
+      "metric": "38% \u2192 55% activated by day 14",
+      "owner": "Dana Ortiz"
+    },
+    {
+      "objective": "Reduce 'how do I' tickets from new admins",
+      "why": "Support cost and onboarding NPS",
+      "metric": "",
+      "owner": "Dana Ortiz"
+    }
+  ],
+  "key_moments": [
+    {
+      "name": "First shift scheduled",
+      "objective": "Activate new clinics within 14 days",
+      "events": "Scheduled First Shift",
+      "platform": "Web",
+      "exists": "No - add track()"
+    },
+    {
+      "name": "Team invited",
+      "objective": "Activate new clinics within 14 days",
+      "events": "Invited Team Member",
+      "platform": "Web",
+      "exists": "Yes"
+    },
+    {
+      "name": "Self-served help",
+      "objective": "Reduce 'how do I' tickets",
+      "events": "Opened Help Article, Submitted Support Ticket",
+      "platform": "Web",
+      "exists": ""
+    }
+  ],
+  "launches": [
+    {
+      "sentence": "Show a scheduling walkthrough Flow to clinic admins in their first 7 days who haven't scheduled a shift.",
+      "success_measure": "Moves 'First shift scheduled'",
+      "platform": "Web",
+      "properties": "role, createdAt",
+      "events": "Scheduled First Shift",
+      "screens": ""
+    },
+    {
+      "sentence": "Banner for clinics in Salesforce lifecycle stage 'Onboarding' promoting the team-invite Checklist.",
+      "success_measure": "Moves 'Team invited'",
+      "platform": "Web",
+      "properties": "lifecycleStage (CRM)",
+      "events": "Invited Team Member",
+      "screens": ""
+    },
+    {
+      "sentence": "Mobile Flow for nurses on first app open explaining shift swaps.",
+      "success_measure": "",
+      "platform": "Mobile",
+      "properties": "role",
+      "events": "mobile-Swapped Shift",
+      "screens": "home, schedule"
+    }
+  ],
+  "identity": [
+    {
+      "item": "User ID passed to identify()",
+      "answer": "Internal user UUID",
+      "notes": "Opaque and permanent. Must also exist on the Salesforce Contact."
+    },
+    {
+      "item": "Account ID passed to group()",
+      "answer": "",
+      "notes": "Should be the ID Salesforce already uses for the clinic (Text field)."
+    },
+    {
+      "item": "Anonymous (logged-out) users?",
+      "answer": "No",
+      "notes": "Call reset() on logout."
+    },
+    {
+      "item": "Internal & test users excluded how?",
+      "answer": "",
+      "notes": "They count toward MAU.",
+      "owner": "developer"
+    },
+    {
+      "item": "Identity verification required?",
+      "answer": "",
+      "notes": "Needs a backend endpoint + shared secret."
+    }
+  ],
+  "user_properties": [
+    {
+      "name": "userId",
+      "use": "Identify unique users",
+      "used_in": "All",
+      "layer": "Contextual",
+      "source": "Installation",
+      "type": "String"
+    },
+    {
+      "name": "email",
+      "use": "Display identifier; Salesforce data-out match",
+      "used_in": "Integrations",
+      "layer": "Contextual",
+      "source": "Installation",
+      "type": "String"
+    },
+    {
+      "name": "createdAt",
+      "use": "First-7-days targeting",
+      "used_in": "Launch 1 segment",
+      "layer": "Contextual",
+      "source": "Installation",
+      "type": "Date"
+    },
+    {
+      "name": "role",
+      "use": "Admin vs nurse targeting",
+      "used_in": "Launches 1 & 3; Dashboard breakdown",
+      "layer": "Contextual",
+      "source": "Installation",
+      "type": "String"
+    },
+    {
+      "name": "personaSegment",
+      "use": "Marketing persona",
+      "used_in": "Reusable audiences",
+      "layer": "Contextual",
+      "source": "Integration (Salesforce)",
+      "type": "String"
+    }
+  ],
+  "account_properties": [
+    {
+      "name": "groupId",
+      "use": "Identify unique clinics",
+      "used_in": "All",
+      "layer": "Contextual",
+      "source": "Installation",
+      "type": "String"
+    },
+    {
+      "name": "planTier",
+      "use": "Target by plan",
+      "used_in": "Dashboards breakdown",
+      "layer": "Contextual",
+      "source": "Installation",
+      "type": "String"
+    },
+    {
+      "name": "lifecycleStage",
+      "use": "Onboarding-stage targeting",
+      "used_in": "Launch 2 segment",
+      "layer": "Contextual",
+      "source": "Integration (Salesforce)",
+      "type": "String"
+    },
+    {
+      "name": "renewalDate",
+      "use": "Pre-renewal campaigns",
+      "used_in": "Reusable audiences",
+      "layer": "Contextual",
+      "source": "Integration (Salesforce)",
+      "type": "Date"
+    }
+  ],
+  "events": [
+    {
+      "name": "Scheduled First Shift",
+      "where": "Schedule page, Save button",
+      "platform": "Web",
+      "method": "track()",
+      "used_in": "Key Moment; Activation Dashboard",
+      "key_moment": "Yes"
+    },
+    {
+      "name": "Invited Team Member",
+      "where": "Settings > Team",
+      "platform": "Web",
+      "method": "track()",
+      "used_in": "Key Moment; Launch 2 goal",
+      "key_moment": "Yes"
+    },
+    {
+      "name": "Opened Help Article",
+      "where": "Help menu",
+      "platform": "Web",
+      "method": "Event Tracking (no code)",
+      "used_in": "Key Moment",
+      "key_moment": "Yes"
+    },
+    {
+      "name": "mobile-Swapped Shift",
+      "where": "Schedule screen",
+      "platform": "Mobile",
+      "method": "track()",
+      "used_in": "Launch 3 goal",
+      "key_moment": ""
+    }
+  ],
+  "measurement": {
+    "dashboards": [
+      {
+        "name": "New clinic activation",
+        "question": "What share of new clinics schedule a shift within 14 days, and did the walkthrough help?",
+        "events": "Scheduled First Shift",
+        "breakdown": "planTier, Flow seen vs not"
+      },
+      {
+        "name": "Self-serve help",
+        "question": "",
+        "events": "Opened Help Article, Submitted Support Ticket",
+        "breakdown": "role"
+      }
+    ]
+  },
+  "crm": {
+    "system": "Salesforce",
+    "items": [
+      {
+        "item": "CRM system",
+        "answer": "Salesforce Enterprise"
+      },
+      {
+        "item": "CRM admin / owner",
+        "answer": "",
+        "notes": "Needs API Enabled + Customize Application permissions."
+      },
+      {
+        "item": "Object for users",
+        "answer": "Contact"
+      },
+      {
+        "item": "Object for accounts",
+        "answer": "Account"
+      },
+      {
+        "item": "Field holding the Appcues user ID",
+        "answer": "",
+        "notes": "Create Product_User_Id__c (Text) - must equal identify() ID exactly."
+      },
+      {
+        "item": "Field holding the Appcues account ID",
+        "answer": "",
+        "notes": "Text field; numeric IDs need a TEXT() formula field."
+      }
+    ],
+    "field_mapping": [
+      {
+        "object": "Account",
+        "field": "Lifecycle_Stage__c",
+        "property": "lifecycleStage",
+        "level": "Account",
+        "use": "Onboarding vs adopted vs at-risk segments"
+      },
+      {
+        "object": "Account",
+        "field": "Renewal_Date__c",
+        "property": "renewalDate",
+        "level": "Account",
+        "use": "60-days-to-renewal campaigns"
+      },
+      {
+        "object": "Contact",
+        "field": "Persona__c",
+        "property": "personaSegment",
+        "level": "User",
+        "use": "Persona-based messaging"
+      }
+    ],
+    "audiences": [
+      {
+        "name": "Onboarding clinics",
+        "conditions": "lifecycleStage = Onboarding",
+        "use": "Launch 2; onboarding campaign"
+      },
+      {
+        "name": "Renewing in 60 days",
+        "conditions": "renewalDate within next 60 days",
+        "use": "Value-recap campaign"
+      }
+    ],
+    "data_out": [
+      "Flow completions and NPS responses to the Contact activity timeline so CSMs see engagement in Salesforce."
+    ]
+  },
+  "integrations": [
+    {
+      "tool": "Snowflake via Hightouch",
+      "category": "Warehouse",
+      "direction": "In",
+      "purpose": "Usage scores per clinic",
+      "id_match": "Hightouch model user ID = identify() ID",
+      "owner": "",
+      "status": ""
+    },
+    {
+      "tool": "Appcues MCP",
+      "category": "MCP",
+      "direction": "Both",
+      "purpose": "Selector checks before frontend changes",
+      "id_match": "-",
+      "owner": "Sam Lee",
+      "status": ""
+    }
+  ],
+  "mobile": {
+    "screens": [
+      {
+        "name": "home",
+        "description": "Initial screen after login",
+        "app": "Brightwave RN"
+      },
+      {
+        "name": "schedule",
+        "description": "Weekly shift schedule",
+        "app": "Brightwave RN"
+      }
+    ]
+  },
+  "targeting_web": [
+    {
+      "element": "Save shift button",
+      "where": "Schedule page",
+      "attribute": "data-appcues=\"schedule-save\""
+    },
+    {
+      "element": "Invite teammate button",
+      "where": "Settings > Team",
+      "attribute": "data-appcues=\"invite-member\""
+    }
+  ],
+  "agents": {
+    "items": [
+      {
+        "item": "Agent or chat surface in product?",
+        "answer": "Yes - Intercom Fin in the web app"
+      },
+      {
+        "item": "Built in-house or vendor?",
+        "answer": "Vendor (Intercom)"
+      },
+      {
+        "item": "Where it appears",
+        "answer": "Help launcher, bottom right of web app"
+      },
+      {
+        "item": "What it can do today",
+        "answer": "Answers help-center questions; hands off to support"
+      },
+      {
+        "item": "Can you export traces / chat transcripts?",
+        "answer": ""
+      },
+      {
+        "item": "Who owns it",
+        "answer": "Support Ops"
+      },
+      {
+        "item": "What you'd want it to do next",
+        "answer": "Take actions (create a shift) for admins"
+      }
+    ]
+  },
+  "open_questions": [
+    {
+      "question": "Which ID becomes the account ID for group()?",
+      "why": "Blocks the Salesforce sync",
+      "owner": "Sam Lee + SF admin",
+      "due": "2026-10-30"
+    },
+    {
+      "question": "Is identity verification required by security?",
+      "why": "Needs backend work if yes",
+      "owner": "",
+      "due": ""
+    }
+  ],
+  "next_steps": [
+    {
+      "step": "Name a Salesforce admin and create the Product_User_Id__c field",
+      "owner": "Dana Ortiz",
+      "due": "2026-10-30"
+    },
+    {
+      "step": "Open CSP ticket with security for Appcues domains",
+      "owner": "Sam Lee",
+      "due": "2026-10-28"
+    },
+    {
+      "step": "Implementation kickoff with engineering",
+      "owner": "Appcues",
+      "due": "2026-11-04"
+    }
+  ]
+}
